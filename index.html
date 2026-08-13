@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+    <title>BBRacing Map Editor</title>
+
+    <link rel="stylesheet" href="styles/style.css">
+
+    <!-- Three.js -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
+        }
+    }
+    </script>
+</head>
+
+<body>
+
+<div id="app">
+
+    <!-- =====================================================
+         BARRA SUPERIOR
+         ===================================================== -->
+
+    <header id="toolbar">
+
+        <div class="brand">
+            BBRacing Map Editor
+        </div>
+
+        <button id="openMap">
+            📂 JSON
+        </button>
+
+        <button id="openModel">
+            🧊 GLB
+        </button>
+
+        <button id="addCube">
+            ◼ Cubo
+        </button>
+
+        <button id="addWaypoint">
+            📍 Waypoint
+        </button>
+
+        <button id="deleteObject">
+            🗑
+        </button>
+
+        <button id="saveMap">
+            💾 Guardar
+        </button>
+
+        <button id="toggleGrid">
+            Grid
+        </button>
+
+        <span id="mapStatus">
+            Sin mapa
+        </span>
+
+    </header>
+
+
+    <!-- =====================================================
+         ESCENA 3D
+         ===================================================== -->
+
+    <main id="viewport"></main>
+
+
+    <!-- =====================================================
+         LISTA DE OBJETOS
+         ===================================================== -->
+
+    <aside id="objectPanel">
+
+        <div class="panelTitle">
+            OBJETOS
+        </div>
+
+        <div id="objectList">
+
+            <div class="empty">
+                No hay objetos
+            </div>
+
+        </div>
+
+    </aside>
+
+
+    <!-- =====================================================
+         INSPECTOR
+         ===================================================== -->
+
+    <aside id="inspector">
+
+        <div class="panelTitle">
+            INSPECTOR
+        </div>
+
+        <div id="noSelection">
+
+            Selecciona un objeto.
+
+        </div>
+
+
+        <div id="objectInspector"
+             class="hidden">
+
+            <div class="objectName"
+                 id="selectedName">
+                Objeto
+            </div>
+
+
+            <!-- POSICIÓN -->
+
+            <section>
+
+                <h3>Posición</h3>
+
+                <label>
+                    X
+                    <input
+                        id="posX"
+                        type="number"
+                        step="0.01"
+                    >
+                </label>
+
+                <label>
+                    Y
+                    <input
+                        id="posY"
+                        type="number"
+                        step="0.01"
+                    >
+                </label>
+
+                <label>
+                    Z
+                    <input
+                        id="posZ"
+                        type="number"
+                        step="0.01"
+                    >
+
+                </label>
+
+            </section>
+
+
+            <!-- ROTACIÓN -->
+
+            <section>
+
+                <h3>Rotación</h3>
+
+                <label>
+                    X
+                    <input
+                        id="rotX"
+                        type="number"
+                        step="0.1"
+                    >
+                </label>
+
+                <label>
+                    Y
+                    <input
+                        id="rotY"
+                        type="number"
+                        step="0.1"
+                    >
+                </label>
+
+                <label>
+                    Z
+                    <input
+                        id="rotZ"
+                        type="number"
+                        step="0.1"
+                    >
+                </label>
+
+            </section>
+
+
+            <!-- ESCALA -->
+
+            <section>
+
+                <h3>Escala</h3>
+
+                <label>
+                    X
+                    <input
+                        id="scaleX"
+                        type="number"
+                        step="0.01"
+                    >
+                </label>
+
+                <label>
+                    Y
+                    <input
+                        id="scaleY"
+                        type="number"
+                        step="0.01"
+                    >
+                </label>
+
+                <label>
+                    Z
+                    <input
+                        id="scaleZ"
+                        type="number"
+                        step="0.01"
+                    >
+                </label>
+
+            </section>
+
+
+            <button
+                id="applyTransform"
+                class="fullButton"
+            >
+                Aplicar
+            </button>
+
+            <button
+                id="focusObject"
+                class="fullButton"
+            >
+                🎯 Enfocar
+            </button>
+
+        </div>
+
+    </aside>
+
+ <!-- =====================================================
+         informacion
+         ===================================================== -->
+
+    <div id="popup">
+        <p id="fuckyou">!Ready¡</p>
+    </div>
+    <!-- =====================================================
+         AYUDA
+         ===================================================== -->
+
+    <div id="controlsInfo">
+
+        🖱 Arrastrar: cámara
+        &nbsp; • &nbsp;
+        Rueda: zoom
+        &nbsp; • &nbsp;
+        Click: seleccionar ||select
+
+    </div>
+
+
+    <!-- INPUTS -->
+
+    <input
+        id="mapFile"
+        type="file"
+        accept=".json"
+        hidden
+    >
+
+    <input
+        id="modelFile"
+        type="file"
+        accept=".glb,.gltf"
+        hidden
+    >
+
+</div>
+
+
+<script
+    type="module"
+    src="src/main.js">
+</script>
+
+</body>
+</html>

@@ -1,0 +1,2234 @@
+/*
+============================================================
+ BBRACING MAP EDITOR
+ main.js
+
+ ESTA VERSIÓN:
+ -----------------------------------------------------------
+ - Carga BeachB.bin.json
+ - Busca VuAiWaypointEntity
+ - Recorre ChildEntities recursivamente
+ - Lee VuTransformComponent
+ - Lee Position
+ - Lee Rotation
+ - Lee Scale
+ - Muestra los waypoints en 3D
+ - Muestra el nombre encima del waypoint
+ - Permite seleccionarlos
+ - Permite moverlos
+ - Permite rotarlos
+ - Permite escalarlos
+ - Inspector con valores reales
+ - Guarda una representación editable de los waypoints
+
+ TODAVÍA NO:
+ -----------------------------------------------------------
+ - Carga modelos GLB automáticamente desde AssetData
+ - Modifica materiales
+ - Modifica texturas
+ - Reconstruye completamente BeachB.bin.json
+
+ Eso lo hacemos después.
+============================================================
+*/
+
+import * as THREE from "three";
+
+import {
+    OrbitControls
+} from "three/addons/controls/OrbitControls.js";
+
+import {
+    TransformControls
+} from "three/addons/controls/TransformControls.js";
+
+import {
+    GLTFLoader
+} from "three/addons/loaders/GLTFLoader.js";
+
+
+
+// ============================================================
+// VARIABLES PRINCIPALES
+// ============================================================
+
+let scene;
+let camera;
+let renderer;
+let world;
+
+let orbit;
+let transformControls;
+
+let raycaster;
+let mouse;
+
+let grid;
+let axes;
+
+let selected = null;
+
+let objects = [];
+
+let mapData = null;
+
+let waypointCounter = 0;
+
+//glb and gltf
+const gltfLoader = new GLTFLoader();
+
+
+// ============================================================
+// HTML
+// ============================================================
+
+const viewport =
+    document.getElementById("viewport");
+
+const objectList =
+    document.getElementById("objectList");
+
+const mapStatus =
+    document.getElementById("mapStatus");
+
+const noSelection =
+    document.getElementById("noSelection");
+
+const objectInspector =
+    document.getElementById("objectInspector");
+
+// ============================================================
+// INICIALIZACIÓN
+// ============================================================
+
+function init() {
+
+    // --------------------------------------------------------
+    // ESCENA
+    // --------------------------------------------------------
+
+    scene =
+        new THREE.Scene();
+
+    scene.background =
+        new THREE.Color(0x151515);
+
+
+    // --------------------------------------------------------
+    // CÁMARA
+    // --------------------------------------------------------
+
+    camera =
+        new THREE.PerspectiveCamera(
+            60,
+            window.innerWidth /
+            window.innerHeight,
+            0.1,
+            100000
+        );
+
+    camera.position.set(
+        30,
+        25,
+        30
+    );
+
+
+    // --------------------------------------------------------
+    // RENDERER
+    // --------------------------------------------------------
+
+    renderer =
+        new THREE.WebGLRenderer({
+            antialias: true
+        });
+
+    renderer.setPixelRatio(
+        Math.min(
+            window.devicePixelRatio,
+            2
+        )
+    );
+
+    renderer.setSize(
+        window.innerWidth,
+        window.innerHeight
+    );
+
+    renderer.outputColorSpace =
+        THREE.SRGBColorSpace;
+
+    viewport.appendChild(
+        renderer.domElement
+    );
+
+
+    // --------------------------------------------------------
+    // CÁMARA / ORBIT
+    // --------------------------------------------------------
+
+    orbit =
+        new OrbitControls(
+            camera,
+            renderer.domElement
+        );
+
+    orbit.enableDamping = true;
+
+    orbit.dampingFactor = 0.08;
+
+    orbit.target.set(
+        0,
+        0,
+        0
+    );
+
+
+    // --------------------------------------------------------
+    // LUCES
+    // --------------------------------------------------------
+
+    const ambient =
+        new THREE.HemisphereLight(
+            0xffffff,
+            0x444444,
+            2
+        );
+
+    scene.add(
+        ambient
+    );
+
+
+    const directional =
+        new THREE.DirectionalLight(
+            0xffffff,
+            2
+        );
+
+    directional.position.set(
+        100,
+        200,
+        100
+    );
+
+    scene.add(
+        directional
+    );
+
+
+    // --------------------------------------------------------
+    // GRID
+    // --------------------------------------------------------
+
+    grid =
+        new THREE.GridHelper(
+            500,
+            100
+        );
+
+    scene.add(
+        grid
+    );
+
+
+    // --------------------------------------------------------
+    // EJES
+    // --------------------------------------------------------
+
+    axes =
+        new THREE.AxesHelper(
+            20
+        );
+
+    scene.add(
+        axes
+    );
+
+
+    // --------------------------------------------------------
+    // RAYCASTER
+    // --------------------------------------------------------
+
+    raycaster =
+        new THREE.Raycaster();
+
+    mouse =
+        new THREE.Vector2();
+
+
+    // --------------------------------------------------------
+    // TRANSFORM CONTROLS
+    // --------------------------------------------------------
+
+    transformControls =
+        new TransformControls(
+            camera,
+            renderer.domElement
+        );
+
+    transformControls.setMode(
+        "translate"
+    );
+
+    transformControls.setSize(
+        0.8
+    );
+
+
+    transformControls.addEventListener(
+        "dragging-changed",
+        event => {
+
+            orbit.enabled =
+                !event.value;
+
+        }
+    );
+
+
+    transformControls.addEventListener(
+        "objectChange",
+        () => {
+
+            updateInspector();
+
+        }
+    );
+
+
+    scene.add(
+        transformControls.getHelper()
+    );
+
+
+    //----------------------------------------------------------
+    // World
+    //----------------------------------------------------------
+    
+    world = new THREE.Group();
+    world.name = "BBRacingWorld";
+    
+    scene.add(world);
+
+    //position
+    world.position.x = 0.0;
+    world.position.y = 7.0;
+    world.position.z = 0.0;
+    
+    // Rotación global del mapa
+
+    world.rotation.x = THREE.MathUtils.degToRad(270); //90
+    
+    
+    
+    // --------------------------------------------------------
+    // EVENTOS
+    // --------------------------------------------------------
+
+    renderer.domElement.addEventListener(
+        "pointerdown",
+        onPointerDown
+    );
+
+
+    window.addEventListener(
+        "resize",
+        onResize
+    );
+
+
+    // --------------------------------------------------------
+    // ABRIR JSON
+    // --------------------------------------------------------
+
+    document
+        .getElementById("openMap")
+        .onclick =
+            () => {
+
+                document
+                    .getElementById("mapFile")
+                    .click();
+
+            };
+
+
+    document
+        .getElementById("mapFile")
+        .addEventListener(
+            "change",
+            loadJSON
+        );
+
+
+    // --------------------------------------------------------
+    // BOTÓN GLB
+    // --------------------------------------------------------
+
+    document
+        .getElementById("openModel")
+        .onclick =
+            () => {
+
+                alert(
+                    "La carga de modelos GLB la conectaremos después."
+                );
+
+            };
+
+
+    // --------------------------------------------------------
+    // BOTÓN CUBO
+    // --------------------------------------------------------
+
+    document
+        .getElementById("addCube")
+        .onclick =
+            addCube;
+
+
+    // --------------------------------------------------------
+    // BOTÓN WAYPOINT
+    // --------------------------------------------------------
+
+    document
+        .getElementById("addWaypoint")
+        .onclick =
+            addWaypoint;
+
+
+    // --------------------------------------------------------
+    // BORRAR
+    // --------------------------------------------------------
+
+    document
+        .getElementById("deleteObject")
+        .onclick =
+            deleteSelected;
+
+
+    // --------------------------------------------------------
+    // GUARDAR
+    // --------------------------------------------------------
+
+    document
+        .getElementById("saveMap")
+        .onclick =
+            saveMap;
+
+
+    // --------------------------------------------------------
+    // GRID
+    // --------------------------------------------------------
+
+    document
+        .getElementById("toggleGrid")
+        .onclick =
+            () => {
+
+                grid.visible =
+                    !grid.visible;
+
+            };
+
+
+    // --------------------------------------------------------
+    // INSPECTOR
+    // --------------------------------------------------------
+
+    document
+        .getElementById("applyTransform")
+        .onclick =
+            applyInspector;
+
+
+    document
+        .getElementById("focusObject")
+        .onclick =
+            focusSelected;
+
+
+    // --------------------------------------------------------
+    // TECLADO
+    // --------------------------------------------------------
+
+    window.addEventListener(
+        "keydown",
+        onKeyDown
+    );
+
+
+    // --------------------------------------------------------
+    // INICIAR
+    // --------------------------------------------------------
+
+    animate();
+}
+
+
+// ============================================================
+// LOOP
+// ============================================================
+
+function animate() {
+
+    requestAnimationFrame(
+        animate
+    );
+
+    orbit.update();
+
+    renderer.render(
+        scene,
+        camera
+    );
+}
+
+
+// ============================================================
+// RESIZE
+// ============================================================
+
+function onResize() {
+
+    camera.aspect =
+        window.innerWidth /
+        window.innerHeight;
+
+    camera.updateProjectionMatrix();
+
+    renderer.setSize(
+        window.innerWidth,
+        window.innerHeight
+    );
+}
+
+
+// ============================================================
+// CLIC / TOUCH
+// ============================================================
+
+function onPointerDown(event) {
+
+    if (
+        transformControls.dragging
+    ) {
+
+        return;
+
+    }
+
+
+    const rect =
+        renderer.domElement
+            .getBoundingClientRect();
+
+
+    mouse.x =
+        (
+            event.clientX -
+            rect.left
+        ) /
+        rect.width *
+        2 -
+        1;
+
+
+    mouse.y =
+        -(
+            (
+                event.clientY -
+                rect.top
+            ) /
+            rect.height
+        ) *
+        2 +
+        1;
+
+
+    raycaster.setFromCamera(
+        mouse,
+        camera
+    );
+
+
+    const hits =
+        raycaster.intersectObjects(
+            objects,
+            true
+        );
+
+
+    if (!hits.length) {
+
+        selectObject(
+            null
+        );
+
+        return;
+
+    }
+
+
+    let object =
+        hits[0].object;
+
+
+    while (
+        object.parent &&
+        !objects.includes(
+            object
+        )
+    ) {
+
+        object =
+            object.parent;
+
+    }
+
+
+    if (
+        objects.includes(
+            object
+        )
+    ) {
+
+        selectObject(
+            object
+        );
+
+    }
+
+}
+
+
+// ============================================================
+// SELECCIONAR
+// ============================================================
+
+function selectObject(object) {
+
+    selected =
+        object;
+
+
+    if (selected) {
+
+        transformControls.attach(
+            selected
+        );
+
+    }
+    else {
+
+        transformControls.detach();
+
+    }
+
+
+    updateInspector();
+
+    updateObjectList();
+
+}
+
+
+// ============================================================
+// CREAR WAYPOINT
+// ============================================================
+
+function addWaypoint() {
+
+    waypointCounter++;
+
+
+    const waypoint =
+        createWaypointMarker(
+            `Waypoint_${waypointCounter}`
+        );
+
+
+    waypoint.position.set(
+        0,
+        1,
+        0
+    );
+
+
+    waypoint.userData.type =
+        "VuAiWaypointEntity";
+
+
+    waypoint.userData.name =
+        `Waypoint_${waypointCounter}`;
+
+
+    waypoint.userData.source =
+        null;
+
+
+    world.add(waypoint);
+
+
+    objects.push(
+        waypoint
+    );
+
+
+    selectObject(
+        waypoint
+    );
+
+
+    updateObjectList();
+
+}
+
+
+// ============================================================
+// CREAR MARCADOR
+// ============================================================
+
+function createWaypointMarker(
+    name
+) {
+
+    const group =
+        new THREE.Group();
+
+
+    group.name =
+        name;
+
+
+    const sphere =
+        new THREE.Mesh(
+
+            new THREE.SphereGeometry(
+                0.8,
+                20,
+                12
+            ),
+
+            new THREE.MeshStandardMaterial({
+
+                color:
+                    0xff3333,
+
+                emissive:
+                    0x550000,
+
+                roughness:
+                    0.6
+
+            })
+
+        );
+
+
+    sphere.userData.isWaypointPart =
+        true;
+
+
+    group.add(
+        sphere
+    );
+
+
+    const cone =
+        new THREE.Mesh(
+
+            new THREE.ConeGeometry(
+                0.35,
+                1.2,
+                12
+            ),
+
+            new THREE.MeshStandardMaterial({
+
+                color:
+                    0xffcc00,
+
+                emissive:
+                    0x442200
+
+            })
+
+        );
+
+
+    cone.position.y =
+        -0.9;
+
+
+    cone.userData.isWaypointPart =
+        true;
+
+
+    group.add(
+        cone
+    );
+
+
+    const lineGeometry =
+        new THREE.BufferGeometry()
+            .setFromPoints([
+
+                new THREE.Vector3(
+                    0,
+                    -0.3,
+                    0
+                ),
+
+                new THREE.Vector3(
+                    0,
+                    -4,
+                    0
+                )
+
+            ]);
+
+
+    const line =
+        new THREE.Line(
+
+            lineGeometry,
+
+            new THREE.LineBasicMaterial({
+                color: 0xff3333
+            })
+
+        );
+
+
+    line.userData.isWaypointPart =
+        true;
+
+
+    group.add(
+        line
+    );
+
+
+    const label =
+        createLabel(
+            name
+        );
+
+
+    label.position.set(
+        0,
+        1.5,
+        0
+    );
+
+
+    group.add(
+        label
+    );
+
+
+    return group;
+
+}
+
+
+// ============================================================
+// CREAR TEXTO
+// ============================================================
+
+function createLabel(text) {
+
+    const canvas =
+        document.createElement(
+            "canvas"
+        );
+
+
+    canvas.width =
+        512;
+
+    canvas.height =
+        128;
+
+
+    const ctx =
+        canvas.getContext(
+            "2d"
+        );
+
+
+    ctx.clearRect(
+        0,
+        0,
+        canvas.width,
+        canvas.height
+    );
+
+
+    ctx.fillStyle =
+        "rgba(0,0,0,0.75)";
+
+
+    ctx.fillRect(
+        0,
+        20,
+        canvas.width,
+        88
+    );
+
+
+    ctx.font =
+        "bold 42px Arial";
+
+
+    ctx.textAlign =
+        "center";
+
+    ctx.textBaseline =
+        "middle";
+
+
+    ctx.fillStyle =
+        "#ffffff";
+
+
+    ctx.fillText(
+        text,
+        canvas.width / 2,
+        canvas.height / 2
+    );
+
+
+    const texture =
+        new THREE.CanvasTexture(
+            canvas
+        );
+
+
+    texture.colorSpace =
+        THREE.SRGBColorSpace;
+
+
+    const material =
+        new THREE.SpriteMaterial({
+
+            map:
+                texture,
+
+            transparent:
+                true,
+
+            depthTest:
+                false
+
+        });
+
+
+    const sprite =
+        new THREE.Sprite(
+            material
+        );
+
+
+    sprite.scale.set(
+        5,
+        1.25,
+        1
+    );
+
+
+    sprite.userData.isWaypointPart =
+        true;
+
+
+    return sprite;
+
+}
+
+
+// ============================================================
+// CARGAR JSON
+// ============================================================
+
+async function loadJSON(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+        mapData = JSON.parse(await file.text());
+        clearObjects(); waypointCounter = 0;
+
+        // 1. Cargar todos los objetos/pistas
+        const entidades = buscarTodasLasEntidades(mapData);
+        console.log(`📦 Encontrados ${entidades.length} objetos`);
+
+        let cargados = 0;
+        let fallidos = 0;
+
+        for (const ent of entidades) {
+            if (ent.type === "VuAiWaypointEntity") {
+                createWaypointFromEntity(ent);
+                continue;
+            }
+
+            const modelName = getModelName(ent);
+
+            if (modelName) {
+                const ok = await crearObjetoDesdeEntidad(ent, modelName);
+                if (ok) cargados++; else fallidos++;
+            }
+        }
+
+        console.log(`✅ Modelos cargados: ${cargados} | ❌ Fallidos: ${fallidos}`);
+
+        updateObjectList();
+        mapStatus.textContent = `${file.name} - Cargado completo`;
+        focusAll();
+    } catch(err) { alert("Error: " + err.message); }
+}
+
+// Función auxiliar para encontrar todas las entidades
+function buscarTodasLasEntidades(datos) {
+    const lista = [];
+    function recorrer(val) {
+        if (!val || typeof val !== "object") return;
+        if (!Array.isArray(val)) {
+            if (val.type) lista.push(val);
+            Object.values(val).forEach(recorrer);
+        } else val.forEach(recorrer);
+    }
+    recorrer(datos);
+    return lista;
+}
+
+// ============================================================
+// BUSCAR WAYPOINTS RECURSIVAMENTE
+// ============================================================
+
+function findWaypoints(
+    root
+) {
+
+    const result = [];
+
+
+    function walk(
+        value
+    ) {
+
+        if (
+            !value ||
+            typeof value !== "object"
+        ) {
+
+            return;
+
+        }
+
+
+        if (
+            !Array.isArray(
+                value
+            )
+        ) {
+
+            if (
+                value.type ===
+                "VuAiWaypointEntity"
+            ) {
+
+                result.push(
+                    value
+                );
+
+            }
+
+
+            for (
+                const key
+                of Object.keys(value)
+            ) {
+
+                walk(
+                    value[key]
+                );
+
+            }
+
+        }
+        else {
+
+            for (
+                const item
+                of value
+            ) {
+
+                walk(
+                    item
+                );
+
+            }
+
+        }
+
+    }
+
+
+    walk(
+        root
+    );
+
+
+    return result;
+
+}
+
+
+// ============================================================
+// CREAR WAYPOINT DESDE ENTIDAD REAL
+// ============================================================
+
+function createWaypointFromEntity(
+    entity
+) {
+
+    const name =
+        entity.name ||
+        "Waypoint";
+
+
+    waypointCounter++;
+
+
+    const waypoint =
+        createWaypointMarker(
+            name
+        );
+
+
+    waypoint.userData.type =
+        "VuAiWaypointEntity";
+
+
+    waypoint.userData.name =
+        name;
+
+
+    waypoint.userData.source =
+        entity;
+
+
+    const transform =
+        getTransformComponent(
+            entity
+        );
+
+
+    if (transform) {
+
+        const properties =
+            transform.Properties ||
+            transform.properties ||
+            {};
+
+
+        const position =
+            readVector(
+                properties.Position
+            );
+
+
+        waypoint.position.copy(
+            position
+        );
+
+
+        const rotation =
+            readVector(
+                properties.Rotation
+            );
+
+
+        waypoint.rotation.set(
+
+            THREE.MathUtils.degToRad(
+                rotation.x
+            ),
+
+            THREE.MathUtils.degToRad(
+                rotation.y
+            ),
+
+            THREE.MathUtils.degToRad(
+                rotation.z
+            )
+
+        );
+
+
+        const scale =
+            readVector(
+                //properties.Scale
+                         3.0,
+                new THREE.Vector3(
+                    1,
+                    1,
+                    1
+                )
+            );
+
+
+        waypoint.scale.copy(
+            scale
+        );
+
+    }
+
+
+    world.add(waypoint);
+
+
+    objects.push(
+        waypoint
+    );
+
+}
+
+
+// ============================================================
+// ENCONTRAR TRANSFORM
+// ============================================================
+
+function getTransformComponent(
+    entity
+) {
+
+    const data =
+        entity.data;
+
+
+    if (!data)
+        return null;
+
+
+    const components =
+        data.Components ||
+        data.components;
+
+
+    if (!components)
+        return null;
+
+
+    return (
+        components.VuTransformComponent ||
+        components.vuTransformComponent ||
+        null
+    );
+
+}
+
+// ============================================================
+// Cargar modelos gltf
+// ============================================================
+
+//pop up
+
+document.getElementById("popup").classList.add("mostrar");
+let infotxt = document.getElementById("fuckyou");
+
+// Se quita solo después de unos segundos
+setTimeout(() => {
+    document.getElementById("popup").classList.remove("mostrar");
+}, 2000);
+
+
+
+
+const root = "model/"; //carpeta de modelos3D || reositiories of models
+const file = ".glb"; //extension de archivos || extention files
+const Models = new Map();  // Guarda modelos ya cargados || save models
+
+async function chargeModel(VuEngine){
+    // si el modelo cargo antes -> devolvemos copia
+    if(Models.has(VuEngine)){
+        return Models.get(VuEngine).clone(true);
+    }
+    // ruta completa
+    const succes = `${root}${VuEngine}${file}`;
+    infotxt.textContent = `loading: ${succes}`;
+    try{
+        const gltf = await gltfLoader.loadAsync(succes); // root
+        Models.set(VuEngine,gltf.scene);
+        return gltf.scene.clone(true);
+    }catch (err){
+        console.warn(`No se pudo cargar el modelo "${VuEngine}" (${succes}):`, err.message);
+        return null;
+    }
+} 
+
+/*
+//cargar un modelo 3d
+gltfLoader.load('model/Boat.glb', function(glb){
+    scene.add(glb.scene);
+    
+}, undefined, function ( error ) { //if the model does exit
+
+    alert("error: g12b");
+    	console.error('im sorry');
+
+});*/
+
+// ============================================================
+// crear modelos,codigo geberado con IA
+// 
+// ============================================================
+
+// ============================================================
+// RESOLVER NOMBRE DEL MODELO A PARTIR DE LA ENTIDAD
+// ============================================================
+//
+// En este formato de mapa hay dos formas de referenciar un modelo:
+//
+// 1) El propio "type" de la entidad ES la referencia al modelo/
+//    template, con un "#" adelante. Ej:
+//    "type": "#Building/BuildingBreakable_HutA"
+//    -> nombre real: "Building/BuildingBreakable_HutA"
+//
+// 2) Entidades "VuGamePropEntity" que guardan la ruta del modelo
+//    dentro de Components.Vu3dDrawStaticModelComponent.Properties
+//    ["Model Asset"]. Ej: "Level/JungleA/Treeline"
+//
+function getModelName(entidad) {
+
+    if (
+        typeof entidad.type === "string" &&
+        entidad.type.startsWith("#")
+    ) {
+        return entidad.type.slice(1);
+    }
+
+    const components =
+        entidad?.data?.Components ||
+        entidad?.data?.components;
+
+    const drawComponent =
+        components?.Vu3dDrawStaticModelComponent ||
+        components?.vu3dDrawStaticModelComponent;
+
+    const props =
+        drawComponent?.Properties ||
+        drawComponent?.properties;
+
+    const modelAsset =
+        props?.["Model Asset"] ||
+        props?.ModelAsset ||
+        props?.modelAsset;
+
+    if (modelAsset) return modelAsset;
+
+    return null;
+}
+
+
+async function crearObjetoDesdeEntidad(entidad, modelName) {
+
+    // Cargamos el modelo automáticamente
+    const modelo = await chargeModel(modelName);
+    if (!modelo) return false;
+
+    // Usamos el MISMO helper que ya usan los waypoints para leer
+    // el transform (Position/Rotation/Scale reales de la entidad).
+    // El grupo "world" ya tiene la rotación global de 90° aplicada
+    // en init(), así que no hace falta invertir ejes a mano aquí.
+    const transform = getTransformComponent(entidad);
+
+    const properties =
+        transform?.Properties ||
+        transform?.properties ||
+        {};
+
+    const pos = readVector(properties.Position);
+    const rot = readVector(properties.Rotation);
+    const scale = readVector(properties.Scale, new THREE.Vector3(1, 1, 1));
+
+    modelo.position.copy(pos);
+
+    modelo.rotation.set(
+        THREE.MathUtils.degToRad(rot.x),
+        THREE.MathUtils.degToRad(rot.y),
+        THREE.MathUtils.degToRad(rot.z)
+    );
+
+    modelo.scale.copy(scale);
+
+    modelo.userData.type = entidad.type;
+    modelo.userData.name = entidad.name || modelName;
+    modelo.userData.source = entidad;
+
+    // Agregamos a la escena y lista
+    world.add(modelo);
+    objects.push(modelo);
+
+    return true;
+}
+
+// ============================================================
+// LEER VECTOR
+// ============================================================
+
+function readVector(
+    value,
+    fallback = new THREE.Vector3()
+) {
+
+    if (
+        !value
+    ) {
+
+        return fallback.clone();
+
+    }
+
+
+    if (
+        Array.isArray(value)
+    ) {
+
+        return new THREE.Vector3(
+
+            Number(
+                value[0]
+            ) || 0,
+
+            Number(
+                value[1]
+            ) || 0,
+
+            Number(
+                value[2]
+            ) || 0
+
+        );
+
+    }
+
+
+    if (
+        typeof value ===
+        "object"
+    ) {
+
+        return new THREE.Vector3(
+
+            Number(
+                value.X ??
+                value.x ??
+                0
+            ),
+
+            Number(
+                value.Y ??
+                value.y ??
+                0
+            ),
+
+            Number(
+                value.Z ??
+                value.z ??
+                0
+            )
+
+        );
+
+    }
+
+
+    return fallback.clone();
+
+}
+
+
+// ============================================================
+// ACTUALIZAR LISTA
+// ============================================================
+
+function updateObjectList() {
+
+    objectList.innerHTML = "";
+
+
+    if (
+        !objects.length
+    ) {
+
+        objectList.innerHTML =
+            `<div class="empty">
+                No hay waypoints
+             </div>`;
+
+        return;
+
+    }
+
+
+    objects.forEach(
+        (object, index) => {
+
+            const item =
+                document.createElement(
+                    "div"
+                );
+
+
+            item.className =
+                "objectItem";
+
+
+            if (
+                object === selected
+            ) {
+
+                item.classList.add(
+                    "selected"
+                );
+
+            }
+
+
+            item.textContent =
+                `${index + 1}. ${
+                    object.userData.name ||
+                    "Waypoint"
+                }`;
+
+
+            item.onclick =
+                () => {
+
+                    selectObject(
+                        object
+                    );
+
+                    focusSelected();
+
+                };
+
+
+            objectList.appendChild(
+                item
+            );
+
+        }
+    );
+
+}
+
+
+// ============================================================
+// INSPECTOR
+// ============================================================
+
+function updateInspector() {
+
+    if (!selected) {
+
+        noSelection.classList.remove(
+            "hidden"
+        );
+
+        objectInspector.classList.add(
+            "hidden"
+        );
+
+        return;
+
+    }
+
+
+    noSelection.classList.add(
+        "hidden"
+    );
+
+
+    objectInspector.classList.remove(
+        "hidden"
+    );
+
+
+    document.getElementById(
+        "selectedName"
+    ).textContent =
+        selected.userData.name ||
+        "Waypoint";
+
+
+    setValue(
+        "posX",
+        selected.position.x
+    );
+
+    setValue(
+        "posY",
+        selected.position.y
+    );
+
+    setValue(
+        "posZ",
+        selected.position.z
+    );
+
+
+    setValue(
+        "rotX",
+        THREE.MathUtils.radToDeg(
+            selected.rotation.x
+        )
+    );
+
+    setValue(
+        "rotY",
+        THREE.MathUtils.radToDeg(
+            selected.rotation.y
+        )
+    );
+
+    setValue(
+        "rotZ",
+        THREE.MathUtils.radToDeg(
+            selected.rotation.z
+        )
+    );
+
+
+    setValue(
+        "scaleX",
+        selected.scale.x
+    );
+
+    setValue(
+        "scaleY",
+        selected.scale.y
+    );
+
+    setValue(
+        "scaleZ",
+        selected.scale.z
+    );
+
+}
+
+
+// ============================================================
+// SET VALUE
+// ============================================================
+
+function setValue(
+    id,
+    value
+) {
+
+    const element =
+        document.getElementById(
+            id
+        );
+
+
+    if (!element)
+        return;
+
+
+    element.value =
+        Number(value)
+            .toFixed(4);
+
+}
+
+
+// ============================================================
+// APLICAR INSPECTOR
+// ============================================================
+
+function applyInspector() {
+
+    if (!selected)
+        return;
+
+
+    selected.position.set(
+
+        readNumber(
+            "posX"
+        ),
+
+        readNumber(
+            "posY"
+        ),
+
+        readNumber(
+            "posZ"
+        )
+
+    );
+
+
+    selected.rotation.set(
+
+        THREE.MathUtils.degToRad(
+            readNumber(
+                "rotX"
+            )
+        ),
+
+        THREE.MathUtils.degToRad(
+            readNumber(
+                "rotY"
+            )
+        ),
+
+        THREE.MathUtils.degToRad(
+            readNumber(
+                "rotZ"
+            )
+        )
+
+    );
+
+
+    selected.scale.set(
+
+        readNumber(
+            "scaleX"
+        ),
+
+        readNumber(
+            "scaleY"
+        ),
+
+        readNumber(
+            "scaleZ"
+        )
+
+    );
+
+
+    updateInspector();
+
+}
+
+
+// ============================================================
+// LEER NÚMERO
+// ============================================================
+
+function readNumber(
+    id
+) {
+
+    return Number(
+        document.getElementById(
+            id
+        ).value
+    ) || 0;
+
+}
+
+
+// ============================================================
+// ENFOCAR OBJETO
+// ============================================================
+
+function focusSelected() {
+
+    if (!selected)
+        return;
+
+
+    const box =
+        new THREE.Box3()
+            .setFromObject(
+                selected
+            );
+
+
+    const center =
+        box.getCenter(
+            new THREE.Vector3()
+        );
+
+
+    const size =
+        box.getSize(
+            new THREE.Vector3()
+        );
+
+
+    const distance =
+        Math.max(
+            size.length() * 2,
+            5
+        );
+
+
+    camera.position.copy(
+        center
+    );
+
+
+    camera.position.x +=
+        distance;
+
+
+    camera.position.y +=
+        distance;
+
+
+    camera.position.z +=
+        distance;
+
+
+    orbit.target.copy(
+        center
+    );
+
+}
+
+
+// ============================================================
+// ENFOCAR TODOS
+// ============================================================
+
+function focusAll() {
+
+    if (
+        !objects.length
+    )
+        return;
+
+
+    const box =
+        new THREE.Box3();
+
+
+    for (
+        const object
+        of objects
+    ) {
+
+        box.expandByObject(
+            object
+        );
+
+    }
+
+
+    const center =
+        box.getCenter(
+            new THREE.Vector3()
+        );
+
+
+    const size =
+        box.getSize(
+            new THREE.Vector3()
+        );
+
+
+    const distance =
+        Math.max(
+            size.length() * 1.5,
+            30
+        );
+
+
+    camera.position.set(
+
+        center.x + distance,
+
+        center.y + distance * 0.7,
+
+        center.z + distance
+
+    );
+
+
+    orbit.target.copy(
+        center
+    );
+
+}
+
+
+// ============================================================
+// BORRAR
+// ============================================================
+
+function deleteSelected() {
+
+    if (!selected)
+        return;
+
+
+    scene.remove(
+        selected
+    );
+
+
+    const index =
+        objects.indexOf(
+            selected
+        );
+
+
+    if (
+        index !== -1
+    ) {
+
+        objects.splice(
+            index,
+            1
+        );
+
+    }
+
+
+    selected = null;
+
+
+    transformControls.detach();
+
+
+    updateInspector();
+
+    updateObjectList();
+
+}
+
+
+// ============================================================
+// LIMPIAR ESCENA
+// ============================================================
+
+function clearObjects() {
+
+    for (
+        const object
+        of objects
+    ) {
+
+        scene.remove(
+            object
+        );
+
+
+        disposeObject(
+            object
+        );
+
+    }
+
+
+    objects = [];
+
+
+    selected = null;
+
+
+    transformControls.detach();
+
+
+    updateInspector();
+
+}
+
+
+// ============================================================
+// DISPOSE
+// ============================================================
+
+function disposeObject(
+    object
+) {
+
+    object.traverse(
+        child => {
+
+            if (
+                child.geometry
+            ) {
+
+                child.geometry.dispose();
+
+            }
+
+
+            if (
+                child.material
+            ) {
+
+                if (
+                    Array.isArray(
+                        child.material
+                    )
+                ) {
+
+                    child.material.forEach(
+                        material =>
+                            disposeMaterial(
+                                material
+                            )
+                    );
+
+                }
+                else {
+
+                    disposeMaterial(
+                        child.material
+                    );
+
+                }
+
+            }
+
+        }
+    );
+
+}
+
+
+// ============================================================
+// DISPOSE MATERIAL
+// ============================================================
+
+function disposeMaterial(
+    material
+) {
+
+    if (
+        material.map
+    ) {
+
+        material.map.dispose();
+
+    }
+
+
+    material.dispose();
+
+}
+
+
+// ============================================================
+// GUARDAR
+// ============================================================
+
+function saveMap() {
+
+    const result = {
+
+        version: 1,
+
+        type:
+            "BBRacingWaypointEditor",
+
+        waypoints:
+            objects.map(
+                object => {
+
+                    const source =
+                        object.userData.source;
+
+
+                    return {
+
+                        name:
+                            object.userData.name,
+
+                        type:
+                            "VuAiWaypointEntity",
+
+                        position: {
+
+                            X:
+                                object.position.x,
+
+                            Y:
+                                object.position.y,
+
+                            Z:
+                                object.position.z
+
+                        },
+
+                        rotation: {
+
+                            X:
+                                THREE.MathUtils.radToDeg(
+                                    object.rotation.x
+                                ),
+
+                            Y:
+                                THREE.MathUtils.radToDeg(
+                                    object.rotation.y
+                                ),
+
+                            Z:
+                                THREE.MathUtils.radToDeg(
+                                    object.rotation.z
+                                )
+
+                        },
+
+                        scale: {
+
+                            X:
+                                object.scale.x,
+
+                            Y:
+                                object.scale.y,
+
+                            Z:
+                                object.scale.z
+
+                        },
+
+                        source:
+                            source
+
+                    };
+
+                }
+            )
+
+    };
+
+
+    const blob =
+        new Blob(
+
+            [
+                JSON.stringify(
+                    result,
+                    null,
+                    2
+                )
+            ],
+
+            {
+                type:
+                    "application/json"
+            }
+
+        );
+
+
+    const url =
+        URL.createObjectURL(
+            blob
+        );
+
+
+    const link =
+        document.createElement(
+            "a"
+        );
+
+
+    link.href =
+        url;
+
+
+    link.download =
+        "BeachB_waypoints.json";
+
+
+    document.body.appendChild(
+        link
+    );
+
+
+    link.click();
+
+
+    link.remove();
+
+
+    setTimeout(
+        () => {
+
+            URL.revokeObjectURL(
+                url
+            );
+
+        },
+        1000
+    );
+
+}
+
+
+// ============================================================
+// TECLADO
+// ============================================================
+
+function onKeyDown(event) {
+
+    if (
+        !selected
+    )
+        return;
+
+
+    if (
+        event.key === "w" ||
+        event.key === "W"
+    ) {
+
+        transformControls.setMode(
+            "translate"
+        );
+
+    }
+
+
+    if (
+        event.key === "e" ||
+        event.key === "E"
+    ) {
+
+        transformControls.setMode(
+            "rotate"
+        );
+
+    }
+
+
+    if (
+        event.key === "r" ||
+        event.key === "R"
+    ) {
+
+        transformControls.setMode(
+            "scale"
+        );
+
+    }
+
+
+    if (
+        event.key === "Delete"
+    ) {
+
+        deleteSelected();
+
+    }
+
+}
+
+
+// ============================================================
+// INICIAR
+// ============================================================
+
+init();

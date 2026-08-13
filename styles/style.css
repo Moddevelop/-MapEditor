@@ -1,0 +1,449 @@
+/* ============================================================
+   BBRACING MAP EDITOR
+   ESTILOS
+   ============================================================ */
+
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+
+    overflow: hidden;
+
+    background: #101010;
+    color: white;
+
+    font-family:
+        Arial,
+        Helvetica,
+        sans-serif;
+}
+
+button,
+input {
+    font: inherit;
+}
+
+
+/* ============================================================
+   APP
+   ============================================================ */
+
+#app {
+    position: relative;
+
+    width: 100%;
+    height: 100%;
+}
+
+
+/* ============================================================
+   VIEWPORT
+   ============================================================ */
+
+#viewport {
+    position: absolute;
+
+    inset: 0;
+
+    overflow: hidden;
+}
+
+#viewport canvas {
+    display: block;
+
+    width: 100%;
+    height: 100%;
+
+    touch-action: none;
+}
+
+
+/* ============================================================
+   TOOLBAR
+   ============================================================ */
+
+#toolbar {
+    position: absolute;
+
+    top: 8px;
+    left: 8px;
+    right: 8px;
+
+    min-height: 48px;
+
+    display: flex;
+    align-items: center;
+
+    gap: 6px;
+
+    padding: 7px;
+
+    background: rgba(20,20,20,.94);
+
+    border:
+        1px solid
+        #444;
+
+    border-radius: 9px;
+
+    z-index: 20;
+}
+
+.brand {
+    font-weight: bold;
+
+    margin-right: 8px;
+
+    white-space: nowrap;
+}
+
+button {
+    background: #292929;
+
+    color: white;
+
+    border:
+        1px solid
+        #555;
+
+    border-radius: 6px;
+
+    padding:
+        7px 10px;
+
+    cursor: pointer;
+}
+
+button:hover {
+    background: #3a3a3a;
+}
+
+button:active {
+    transform: translateY(1px);
+}
+
+#mapStatus {
+    margin-left: auto;
+
+    color: #aaa;
+
+    font-size: 12px;
+
+    white-space: nowrap;
+}
+
+
+/* ============================================================
+   PANELES
+   ============================================================ */
+
+#objectPanel,
+#inspector {
+    position: absolute;
+
+    top: 70px;
+
+    width: 235px;
+
+    max-height:
+        calc(100% - 80px);
+
+    overflow-y: auto;
+
+    background:
+        rgba(20,20,20,.94);
+
+    border:
+        1px solid
+        #444;
+
+    border-radius: 9px;
+
+    z-index: 15;
+}
+
+#objectPanel {
+    left: 8px;
+}
+
+#inspector {
+    right: 8px;
+
+    width: 250px;
+
+    padding-bottom: 10px;
+}
+
+
+/* ============================================================
+   TÍTULOS
+   ============================================================ */
+
+.panelTitle {
+    padding: 11px;
+
+    font-size: 13px;
+
+    font-weight: bold;
+
+    letter-spacing: 1px;
+
+    border-bottom:
+        1px solid
+        #444;
+}
+
+
+/* ============================================================
+   LISTA DE OBJETOS
+   ============================================================ */
+
+#objectList {
+    padding: 6px;
+}
+
+.objectItem {
+    padding: 8px;
+
+    margin-bottom: 3px;
+
+    border-radius: 5px;
+
+    cursor: pointer;
+
+    white-space: nowrap;
+
+    overflow: hidden;
+
+    text-overflow: ellipsis;
+}
+
+.objectItem:hover {
+    background: #333;
+}
+
+.objectItem.selected {
+    background: #155d8f;
+}
+
+.empty {
+    color: #888;
+
+    padding: 10px;
+
+    font-size: 13px;
+}
+
+
+/* ============================================================
+   INSPECTOR
+   ============================================================ */
+
+#noSelection {
+    padding: 12px;
+
+    color: #888;
+
+    font-size: 13px;
+}
+
+#objectInspector {
+    padding: 10px;
+}
+
+.hidden {
+    display: none;
+}
+
+.objectName {
+    font-size: 16px;
+
+    font-weight: bold;
+
+    margin-bottom: 10px;
+
+    word-break: break-word;
+}
+
+section {
+    border-top:
+        1px solid
+        #444;
+
+    padding-top: 9px;
+
+    margin-top: 9px;
+}
+
+section h3 {
+    margin:
+        0 0 7px;
+
+    font-size: 13px;
+
+    color: #bbb;
+}
+
+label {
+    display: grid;
+
+    grid-template-columns:
+        25px 1fr;
+
+    align-items: center;
+
+    gap: 5px;
+
+    margin-bottom: 5px;
+
+    font-size: 12px;
+
+    color: #aaa;
+}
+
+input {
+    width: 100%;
+
+    padding: 6px;
+
+    background: #111;
+
+    color: white;
+
+    border:
+        1px solid
+        #555;
+
+    border-radius: 5px;
+}
+
+.fullButton {
+    width: 100%;
+
+    margin-top: 8px;
+}
+
+
+/* ============================================================
+   AYUDA
+   ============================================================ */
+
+#controlsInfo {
+    position: absolute;
+
+    left: 50%;
+
+    bottom: 10px;
+
+    transform:
+        translateX(-50%);
+
+    padding:
+        7px 12px;
+
+    background:
+        rgba(0,0,0,.7);
+
+    border-radius: 20px;
+
+    color: #aaa;
+
+    font-size: 11px;
+
+    pointer-events: none;
+
+    z-index: 10;
+
+    white-space: nowrap;
+}
+
+
+/* ============================================================
+   MÓVIL
+   ============================================================ */
+
+@media (max-width: 800px) {
+
+    #toolbar {
+        overflow-x: auto;
+
+        flex-wrap: nowrap;
+    }
+
+    .brand {
+        display: none;
+    }
+
+    #objectPanel {
+        width: 170px;
+
+        max-height: 38%;
+    }
+
+    #inspector {
+        width: 190px;
+
+        top: auto;
+
+        bottom: 8px;
+
+        max-height: 48%;
+    }
+
+    #controlsInfo {
+        display: none;
+    }
+
+    button {
+        padding:
+            7px 9px;
+
+        font-size: 12px;
+    }
+
+}
+
+#popup {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    padding: 20px 40px;
+    background: rgba(20, 120, 20, 0.9);
+    border: 2px solid #3c3;
+    border-radius: 12px;
+    color: white;
+    font-size: 22px;
+    font-weight: bold;
+    z-index: 100;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+}
+
+#popup.mostrar {
+    opacity: 1;
+}
+
+
+/* ============================================================
+   MÓVIL PEQUEÑO
+   ============================================================ */
+
+@media (max-width: 500px) {
+
+    #objectPanel {
+        width: 145px;
+    }
+
+    #inspector {
+        width: 175px;
+    }
+
+}
