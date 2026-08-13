@@ -1250,20 +1250,81 @@ const root = "model/"; //carpeta de modelos3D || reositiories of models
 const file = ".glb"; //extension de archivos || extention files
 const Models = new Map();  // Guarda modelos ya cargados || save models
 
+// ============================================================
+// ÍNDICE DE MODELOS REALES (por nombre de archivo)
+// ============================================================
+// El "type" de una entidad (ej. "#Tile/Shore/Shore_CurveOutA") es
+// una referencia a un TEMPLATE, y la carpeta del template no
+// siempre coincide con la carpeta real del modelo estático
+// (ej. el modelo real vive en "Env/Shore/Shore_CurveOutA").
+//
+// Este índice usa la lista VuStaticModelAsset que ya viene dentro
+// del propio JSON del mapa para poder encontrar el modelo real
+// buscando solo por el nombre de archivo (última parte de la ruta),
+// sin importar en qué carpeta esté.
+let assetIndexPorNombre = null;
+
+function buildAssetIndex(mapData) {
+    const index = new Map(); // nombreArchivo -> rutaCompleta
+
+    const assetData = mapData?.AssetData;
+    if (!Array.isArray(assetData)) return index;
+
+    for (const group of assetData) {
+        if (!Array.isArray(group) || group[0] !== "VuStaticModelAsset") continue;
+        for (const rutaCompleta of group.slice(1)) {
+            const nombreArchivo = rutaCompleta.split("/").pop();
+            // Si hay varias coincidencias con el mismo nombre, nos
+            // quedamos con la primera (caso poco común).
+            if (!index.has(nombreArchivo)) {
+                index.set(nombreArchivo, rutaCompleta);
+            }
+        }
+    }
+    return index;
+}
+
+async function intentarCargarGLB(rutaModelo) {
+    const succes = `${root}${rutaModelo}${file}`;
+    infotxt.textContent = `loading: ${succes}`;
+    const gltf = await gltfLoader.loadAsync(succes);
+    return gltf.scene;
+}
+
 async function chargeModel(VuEngine){
     // si el modelo cargo antes -> devolvemos copia
     if(Models.has(VuEngine)){
         return Models.get(VuEngine).clone(true);
     }
-    // ruta completa
-    const succes = `${root}${VuEngine}${file}`;
-    infotxt.textContent = `loading: ${succes}`;
+
+    // Intento 1: ruta directa tal como viene de la entidad
     try{
-        const gltf = await gltfLoader.loadAsync(succes); // root
-        Models.set(VuEngine,gltf.scene);
-        return gltf.scene.clone(true);
+        const scene = await intentarCargarGLB(VuEngine);
+        Models.set(VuEngine, scene);
+        return scene.clone(true);
     }catch (err){
-        console.warn(`No se pudo cargar el modelo "${VuEngine}" (${succes}):`, err.message);
+        // Intento 2: buscar el mismo nombre de archivo en el índice
+        // de modelos reales (construido desde AssetData del JSON)
+        if (!assetIndexPorNombre) {
+            assetIndexPorNombre = buildAssetIndex(mapData);
+        }
+
+        const nombreArchivo = VuEngine.split("/").pop();
+        const rutaReal = assetIndexPorNombre.get(nombreArchivo);
+
+        if (rutaReal && rutaReal !== VuEngine) {
+            try {
+                const scene = await intentarCargarGLB(rutaReal);
+                console.log(`↻ "${VuEngine}" resuelto como "${rutaReal}"`);
+                Models.set(VuEngine, scene);
+                return scene.clone(true);
+            } catch (err2) {
+                console.warn(`No se pudo cargar "${VuEngine}" ni su alias "${rutaReal}":`, err2.message);
+                return null;
+            }
+        }
+
+        console.warn(`No se pudo cargar el modelo "${VuEngine}" (${root}${VuEngine}${file}):`, err.message);
         return null;
     }
 } 
