@@ -318,7 +318,7 @@ function init() {
     
     // Rotación global del mapa
 
-    world.rotation.x = THREE.MathUtils.degToRad(90); //90
+    world.rotation.x = THREE.MathUtils.degToRad(270); //90
     
     
     
