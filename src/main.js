@@ -318,7 +318,7 @@ function init() {
     
     // Rotación global del mapa
 
-    world.rotation.x = THREE.MathUtils.degToRad(270); //90
+    world.rotation.x = THREE.MathUtils.degToRad(90); //90
     
     
     
@@ -1291,6 +1291,58 @@ async function intentarCargarGLB(rutaModelo) {
     return gltf.scene;
 }
 
+// ============================================================
+// BÚSQUEDA POR SIMILITUD (para props "rompibles" tipo Building)
+// ============================================================
+// "#Building/BuildingBreakable_HutA" no coincide ni en carpeta NI
+// en nombre de archivo con el modelo real "Building/Hut_A". Estos
+// son props rompibles: el template compone una versión intacta
+// (Hut_A) y una rota (Hut_A_broken). Buscamos por coincidencia
+// parcial de texto y preferimos la versión intacta.
+let listaModelosEstaticos = null;
+
+function buildAssetList(mapData) {
+    const lista = [];
+    const assetData = mapData?.AssetData;
+    if (!Array.isArray(assetData)) return lista;
+    for (const group of assetData) {
+        if (!Array.isArray(group) || group[0] !== "VuStaticModelAsset") continue;
+        for (const ruta of group.slice(1)) lista.push(ruta);
+    }
+    return lista;
+}
+
+function normalizarNombre(rutaOTexto) {
+    const nombre = rutaOTexto.split("/").pop();
+    return nombre
+        .replace(/breakable/gi, "")
+        .replace(/[^a-zA-Z0-9]/g, "")
+        .toLowerCase();
+}
+
+function buscarModeloPorSimilitud(referencia) {
+    if (!listaModelosEstaticos) {
+        listaModelosEstaticos = buildAssetList(mapData);
+    }
+
+    const objetivo = normalizarNombre(referencia);
+    if (!objetivo) return null;
+
+    const candidatos = listaModelosEstaticos.filter(ruta => {
+        const n = normalizarNombre(ruta);
+        return n && (objetivo.includes(n) || n.includes(objetivo));
+    });
+
+    if (candidatos.length === 0) return null;
+
+    // Preferimos la versión "limpia": sin _broken, _col, _lod, _ref
+    const limpios = candidatos.filter(r => !/_(broken|col|lod\d*|ref)$/i.test(r));
+    const pool = limpios.length ? limpios : candidatos;
+
+    // Entre los candidatos, el nombre más corto suele ser la versión base
+    return pool.sort((a, b) => a.length - b.length)[0];
+}
+
 async function chargeModel(VuEngine){
     // si el modelo cargo antes -> devolvemos copia
     if(Models.has(VuEngine)){
@@ -1303,28 +1355,38 @@ async function chargeModel(VuEngine){
         Models.set(VuEngine, scene);
         return scene.clone(true);
     }catch (err){
-        // Intento 2: buscar el mismo nombre de archivo en el índice
-        // de modelos reales (construido desde AssetData del JSON)
+        // Intento 2: mismo nombre de archivo, distinta carpeta
         if (!assetIndexPorNombre) {
             assetIndexPorNombre = buildAssetIndex(mapData);
         }
 
         const nombreArchivo = VuEngine.split("/").pop();
-        const rutaReal = assetIndexPorNombre.get(nombreArchivo);
+        const rutaExacta = assetIndexPorNombre.get(nombreArchivo);
 
-        if (rutaReal && rutaReal !== VuEngine) {
+        if (rutaExacta && rutaExacta !== VuEngine) {
             try {
-                const scene = await intentarCargarGLB(rutaReal);
-                console.log(`↻ "${VuEngine}" resuelto como "${rutaReal}"`);
+                const scene = await intentarCargarGLB(rutaExacta);
+                console.log(`↻ "${VuEngine}" resuelto (exacto) como "${rutaExacta}"`);
                 Models.set(VuEngine, scene);
                 return scene.clone(true);
-            } catch (err2) {
-                console.warn(`No se pudo cargar "${VuEngine}" ni su alias "${rutaReal}":`, err2.message);
+            } catch (err2) { /* seguimos al intento 3 */ }
+        }
+
+        // Intento 3: búsqueda por similitud (props rompibles, etc.)
+        const rutaSimilar = buscarModeloPorSimilitud(VuEngine);
+        if (rutaSimilar && rutaSimilar !== rutaExacta) {
+            try {
+                const scene = await intentarCargarGLB(rutaSimilar);
+                console.log(`↻ "${VuEngine}" resuelto (similitud) como "${rutaSimilar}"`);
+                Models.set(VuEngine, scene);
+                return scene.clone(true);
+            } catch (err3) {
+                console.warn(`No se pudo cargar "${VuEngine}" ni su candidato "${rutaSimilar}":`, err3.message);
                 return null;
             }
         }
 
-        console.warn(`No se pudo cargar el modelo "${VuEngine}" (${root}${VuEngine}${file}):`, err.message);
+        console.warn(`No se pudo cargar el modelo "${VuEngine}" (${root}${VuEngine}${file}) — sin coincidencias`);
         return null;
     }
 } 
@@ -2086,91 +2148,59 @@ function disposeMaterial(
 
 function saveMap() {
 
-    const result = {
+    if (!mapData) {
+        console.warn("No hay un mapa cargado para guardar.");
+        return;
+    }
 
-        version: 1,
+    let actualizados = 0;
 
-        type:
-            "BBRacingWaypointEditor",
+    // Recorremos los objetos de la escena y escribimos los valores
+    // actuales DIRECTO sobre la entidad original dentro de mapData
+    // (object.userData.source es la MISMA referencia, no una copia).
+    // Así solo se tocan Position/Rotation/Scale; todo lo demás de
+    // la entidad (componentes, ids, nombres, etc.) queda intacto.
+    for (const object of objects) {
 
-        waypoints:
-            objects.map(
-                object => {
+        const entidad = object.userData.source;
+        if (!entidad) continue;
 
-                    const source =
-                        object.userData.source;
+        const transform = getTransformComponent(entidad);
+        const properties = transform?.Properties || transform?.properties;
+        if (!properties) continue;
 
+        properties.Position = {
+            X: object.position.x,
+            Y: object.position.y,
+            Z: object.position.z
+        };
 
-                    return {
+        properties.Rotation = {
+            X: THREE.MathUtils.radToDeg(object.rotation.x),
+            Y: THREE.MathUtils.radToDeg(object.rotation.y),
+            Z: THREE.MathUtils.radToDeg(object.rotation.z)
+        };
 
-                        name:
-                            object.userData.name,
+        properties.Scale = {
+            X: object.scale.x,
+            Y: object.scale.y,
+            Z: object.scale.z
+        };
 
-                        type:
-                            "VuAiWaypointEntity",
+        actualizados++;
+    }
 
-                        position: {
+    console.log(`💾 ${actualizados} entidades actualizadas (posición/rotación/escala) sobre el mapa original.`);
 
-                            X:
-                                object.position.x,
-
-                            Y:
-                                object.position.y,
-
-                            Z:
-                                object.position.z
-
-                        },
-
-                        rotation: {
-
-                            X:
-                                THREE.MathUtils.radToDeg(
-                                    object.rotation.x
-                                ),
-
-                            Y:
-                                THREE.MathUtils.radToDeg(
-                                    object.rotation.y
-                                ),
-
-                            Z:
-                                THREE.MathUtils.radToDeg(
-                                    object.rotation.z
-                                )
-
-                        },
-
-                        scale: {
-
-                            X:
-                                object.scale.x,
-
-                            Y:
-                                object.scale.y,
-
-                            Z:
-                                object.scale.z
-
-                        },
-
-                        source:
-                            source
-
-                    };
-
-                }
-            )
-
-    };
-
-
+    // Exportamos el mapa COMPLETO y ORIGINAL, ya con los valores
+    // nuevos escritos encima -- mismo formato que el JSON que
+    // importaste, sin estructuras inventadas.
     const blob =
         new Blob(
 
             [
                 JSON.stringify(
-                    result,
+                    mapData,
                     null,
                     2
                 )
@@ -2201,7 +2231,7 @@ function saveMap() {
 
 
     link.download =
-        "BeachB_waypoints.json";
+        "BeachB_bin.json";
 
 
     document.body.appendChild(
