@@ -8,6 +8,12 @@
 
     <title>BBRacing Map Editor</title>
 
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+
     <link rel="stylesheet" href="styles/style.css">
 
     <!-- Three.js -->
@@ -32,40 +38,56 @@
     <header id="toolbar">
 
         <div class="brand">
-            BBRacing Map Editor
+            <span class="brandMark">▲</span>
+            <span class="brandText">
+                BBRACING <strong>MAP EDITOR</strong>
+            </span>
         </div>
 
-        <button id="openMap">
-            📂 JSON
+        <div class="toolGroup">
+
+            <button id="openMap" class="toolBtn" data-label="Json">
+                <span class="ic">📂</span><span class="lbl">JSON</span>
+            </button>
+
+            <button id="copyObject" class="toolBtn" data-label="Copiar">
+                <span class="ic">📋</span><span class="lbl">Copiar</span>
+            </button>
+
+            <button id="pasteObject" class="toolBtn" data-label="Pegar">
+                <span class="ic">📥</span><span class="lbl">Pegar</span>
+            </button>
+
+            <button id="deleteObject" class="toolBtn danger" data-label="Borrar">
+                <span class="ic">🗑</span>
+            </button>
+
+        </div>
+
+        <div class="toolGroup">
+
+            <button id="toggleWorldVis" class="toolBtn toggleBtn active" data-label="Mapa">
+                <span class="ic">🗺</span><span class="lbl">Mapa</span>
+            </button>
+
+            <button id="toggleOOBVis" class="toolBtn toggleBtn" data-label="Límites">
+                <span class="ic">⛶</span><span class="lbl">Límites</span>
+            </button>
+
+            <button id="toggleGrid" class="toolBtn toggleBtn active" data-label="Grid">
+                <span class="ic">▦</span><span class="lbl">Grid</span>
+            </button>
+
+        </div>
+
+        <button id="saveMap" class="toolBtn primary" data-label="Guardar">
+            <span class="ic">💾</span><span class="lbl">Guardar</span>
         </button>
 
-        <button id="openModel">
-            🧊 GLB
-        </button>
-
-        <button id="addCube">
-            ◼ Cubo
-        </button>
-
-        <button id="addWaypoint">
-            📍 Waypoint
-        </button>
-
-        <button id="deleteObject">
-            🗑
-        </button>
-
-        <button id="saveMap">
-            💾 Guardar
-        </button>
-
-        <button id="toggleGrid">
-            Grid
-        </button>
-
-        <span id="mapStatus">
-            Sin mapa
-        </span>
+        <div class="statusReadout">
+            <span class="statusDot"></span>
+            <span id="mapStatus" class="statusText">Sin mapa</span>
+        </div>
 
     </header>
 
@@ -81,10 +103,11 @@
          LISTA DE OBJETOS
          ===================================================== -->
 
-    <aside id="objectPanel">
+    <aside id="objectPanel" class="dock">
 
         <div class="panelTitle">
-            OBJETOS
+            <span class="titleTick"></span>
+            JERARQUÍA
         </div>
 
         <div id="objectList">
@@ -102,16 +125,15 @@
          INSPECTOR
          ===================================================== -->
 
-    <aside id="inspector">
+    <aside id="inspector" class="dock">
 
         <div class="panelTitle">
+            <span class="titleTick"></span>
             INSPECTOR
         </div>
 
         <div id="noSelection">
-
-            Selecciona un objeto.
-
+            Selecciona un objeto en la escena o en la jerarquía.
         </div>
 
 
@@ -126,168 +148,119 @@
 
             <!-- POSICIÓN -->
 
-            <section>
+            <section class="xyzSection">
 
-                <h3>Posición</h3>
+                <h3><span class="secIc">⊹</span> Posición</h3>
 
-                <label>
-                    X
-                    <input
-                        id="posX"
-                        type="number"
-                        step="0.01"
-                    >
-                </label>
+                <div class="xyzRow">
+                    <label class="axisX">
+                        <span>X</span>
+                        <input id="posX" type="number" step="0.01">
+                    </label>
 
-                <label>
-                    Y
-                    <input
-                        id="posY"
-                        type="number"
-                        step="0.01"
-                    >
-                </label>
+                    <label class="axisY">
+                        <span>Y</span>
+                        <input id="posY" type="number" step="0.01">
+                    </label>
 
-                <label>
-                    Z
-                    <input
-                        id="posZ"
-                        type="number"
-                        step="0.01"
-                    >
-
-                </label>
+                    <label class="axisZ">
+                        <span>Z</span>
+                        <input id="posZ" type="number" step="0.01">
+                    </label>
+                </div>
 
             </section>
 
 
             <!-- ROTACIÓN -->
 
-            <section>
+            <section class="xyzSection">
 
-                <h3>Rotación</h3>
+                <h3><span class="secIc">↻</span> Rotación</h3>
 
-                <label>
-                    X
-                    <input
-                        id="rotX"
-                        type="number"
-                        step="0.1"
-                    >
-                </label>
+                <div class="xyzRow">
+                    <label class="axisX">
+                        <span>X</span>
+                        <input id="rotX" type="number" step="0.1">
+                    </label>
 
-                <label>
-                    Y
-                    <input
-                        id="rotY"
-                        type="number"
-                        step="0.1"
-                    >
-                </label>
+                    <label class="axisY">
+                        <span>Y</span>
+                        <input id="rotY" type="number" step="0.1">
+                    </label>
 
-                <label>
-                    Z
-                    <input
-                        id="rotZ"
-                        type="number"
-                        step="0.1"
-                    >
-                </label>
+                    <label class="axisZ">
+                        <span>Z</span>
+                        <input id="rotZ" type="number" step="0.1">
+                    </label>
+                </div>
 
             </section>
 
 
             <!-- ESCALA -->
 
-            <section>
+            <section class="xyzSection">
 
-                <h3>Escala</h3>
+                <h3><span class="secIc">⤢</span> Escala</h3>
 
-                <label>
-                    X
-                    <input
-                        id="scaleX"
-                        type="number"
-                        step="0.01"
-                    >
-                </label>
+                <div class="xyzRow">
+                    <label class="axisX">
+                        <span>X</span>
+                        <input id="scaleX" type="number" step="0.01">
+                    </label>
 
-                <label>
-                    Y
-                    <input
-                        id="scaleY"
-                        type="number"
-                        step="0.01"
-                    >
-                </label>
+                    <label class="axisY">
+                        <span>Y</span>
+                        <input id="scaleY" type="number" step="0.01">
+                    </label>
 
-                <label>
-                    Z
-                    <input
-                        id="scaleZ"
-                        type="number"
-                        step="0.01"
-                    >
-                </label>
+                    <label class="axisZ">
+                        <span>Z</span>
+                        <input id="scaleZ" type="number" step="0.01">
+                    </label>
+                </div>
 
             </section>
 
 
-            <button
-                id="applyTransform"
-                class="fullButton"
-            >
-                Aplicar
+            <button id="applyTransform" class="fullButton primary">
+                Aplicar cambios
             </button>
 
-            <button
-                id="focusObject"
-                class="fullButton"
-            >
-                🎯 Enfocar
+            <button id="focusObject" class="fullButton">
+                🎯 Enfocar cámara
             </button>
 
         </div>
 
     </aside>
 
- <!-- =====================================================
-         informacion
+    <!-- =====================================================
+         INFORMACIÓN / TOAST
          ===================================================== -->
 
     <div id="popup">
-        <p id="fuckyou">!Ready¡</p>
+        <span class="popupDot"></span>
+        <p id="fuckyou">Ready</p>
     </div>
+
     <!-- =====================================================
          AYUDA
          ===================================================== -->
 
     <div id="controlsInfo">
-
-        🖱 Arrastrar: cámara
-        &nbsp; • &nbsp;
-        Rueda: zoom
-        &nbsp; • &nbsp;
-        Click: seleccionar ||select
-
+        <span>🖱 Arrastrar — cámara</span>
+        <span class="sep">/</span>
+        <span>Rueda — zoom</span>
+        <span class="sep">/</span>
+        <span>Click — seleccionar</span>
     </div>
 
 
     <!-- INPUTS -->
 
-    <input
-        id="mapFile"
-        type="file"
-        accept=".json"
-        hidden
-    >
-
-    <input
-        id="modelFile"
-        type="file"
-        accept=".glb,.gltf"
-        hidden
-    >
+    <input id="mapFile" type="file" accept=".json" hidden>
 
 </div>
 
