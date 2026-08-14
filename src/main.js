@@ -56,6 +56,7 @@ let scene;
 let camera;
 let renderer;
 let world;
+let outOfBoundsGroup;
 
 let orbit;
 let transformControls;
@@ -71,6 +72,12 @@ let selected = null;
 let objects = [];
 
 let mapData = null;
+
+// Copiar/Pegar: a qué array (ChildEntities) pertenece cada entidad
+// dentro de mapData, y qué hay copiado en el "portapapeles".
+let entidadAContenedor = new WeakMap();
+let clipboard = null;
+let pegadoCounter = 0;
 
 let waypointCounter = 0;
 
@@ -319,6 +326,15 @@ function init() {
     // Rotación global del mapa
 
     world.rotation.x = THREE.MathUtils.degToRad(270); //90
+
+
+    // Grupo aparte para las cajas "Out Of Bounds" (invisibles en
+    // el juego, solo ayuda visual del editor). Va DENTRO de world
+    // para heredar la misma rotación/posición que todo lo demás.
+    outOfBoundsGroup = new THREE.Group();
+    outOfBoundsGroup.name = "OutOfBoundsHelpers";
+    outOfBoundsGroup.visible = false; // oculto por defecto
+    world.add(outOfBoundsGroup);
     
     
     
@@ -363,39 +379,19 @@ function init() {
 
 
     // --------------------------------------------------------
-    // BOTÓN GLB
+    // --------------------------------------------------------
+    // COPIAR / PEGAR
     // --------------------------------------------------------
 
     document
-        .getElementById("openModel")
+        .getElementById("copyObject")
         .onclick =
-            () => {
-
-                alert(
-                    "La carga de modelos GLB la conectaremos después."
-                );
-
-            };
-
-
-    // --------------------------------------------------------
-    // BOTÓN CUBO
-    // --------------------------------------------------------
+            copiarSeleccionado;
 
     document
-        .getElementById("addCube")
+        .getElementById("pasteObject")
         .onclick =
-            addCube;
-
-
-    // --------------------------------------------------------
-    // BOTÓN WAYPOINT
-    // --------------------------------------------------------
-
-    document
-        .getElementById("addWaypoint")
-        .onclick =
-            addWaypoint;
+            pegarClipboard;
 
 
     // --------------------------------------------------------
@@ -429,6 +425,35 @@ function init() {
 
                 grid.visible =
                     !grid.visible;
+
+                document
+                    .getElementById("toggleGrid")
+                    .classList.toggle("active", grid.visible);
+
+            };
+
+
+    // --------------------------------------------------------
+    // VISIBILIDAD: MAPA / LÍMITES (out of bounds)
+    // --------------------------------------------------------
+
+    document
+        .getElementById("toggleWorldVis")
+        .onclick =
+            (e) => {
+
+                world.visible = !world.visible;
+                e.currentTarget.classList.toggle("active", world.visible);
+
+            };
+
+    document
+        .getElementById("toggleOOBVis")
+        .onclick =
+            (e) => {
+
+                outOfBoundsGroup.visible = !outOfBoundsGroup.visible;
+                e.currentTarget.classList.toggle("active", outOfBoundsGroup.visible);
 
             };
 
@@ -958,6 +983,9 @@ async function loadJSON(e) {
     try {
         mapData = JSON.parse(await file.text());
         clearObjects(); waypointCounter = 0;
+        entidadAContenedor = new WeakMap();
+        clipboard = null;
+        indexarContenedores(mapData);
 
         // 1. Cargar todos los objetos/pistas
         const entidades = buscarTodasLasEntidades(mapData);
@@ -969,6 +997,12 @@ async function loadJSON(e) {
         for (const ent of entidades) {
             if (ent.type === "VuAiWaypointEntity") {
                 createWaypointFromEntity(ent);
+                continue;
+            }
+
+            if (ent.type === "VuOutOfBoundsBoxEntity") {
+                const caja = crearCajaOutOfBounds(ent);
+                outOfBoundsGroup.add(caja);
                 continue;
             }
 
@@ -1000,6 +1034,33 @@ function buscarTodasLasEntidades(datos) {
     }
     recorrer(datos);
     return lista;
+}
+
+// ============================================================
+// ÍNDICE DE CONTENEDORES (para poder Copiar/Pegar de verdad)
+// ============================================================
+// Recorre el árbol y recuerda, para cada entidad, el ARRAY exacto
+// (normalmente un "ChildEntities") que la contiene. Así, al pegar
+// una copia, la insertamos en el mismo lugar del árbol que el
+// original -- y sí queda dentro del mapData real al Guardar.
+function indexarContenedores(valor) {
+    if (Array.isArray(valor)) {
+        for (const item of valor) {
+            if (item && typeof item === "object" && item.type) {
+                entidadAContenedor.set(item, valor);
+            }
+            indexarContenedores(item);
+        }
+    } else if (valor && typeof valor === "object") {
+        for (const val of Object.values(valor)) {
+            indexarContenedores(val);
+        }
+    }
+}
+
+function clonarEntidad(entidad) {
+    // Clonado profundo, sin compartir referencias con el original
+    return JSON.parse(JSON.stringify(entidad));
 }
 
 // ============================================================
@@ -1193,6 +1254,8 @@ function createWaypointFromEntity(
         waypoint
     );
 
+    return waypoint;
+
 }
 
 
@@ -1343,6 +1406,138 @@ function buscarModeloPorSimilitud(referencia) {
     return pool.sort((a, b) => a.length - b.length)[0];
 }
 
+// ============================================================
+// TEXTURAS
+// ============================================================
+// Cada malla dentro del .glb ya trae el nombre real del material
+// del juego en mesh.material.name (ej. "Env/Rocks/Rocks_LargeA").
+// El juego amarra imagen <-> material por convención de nombre
+// (mismo nombre base, ej. material "Env/Shore/Cliff" -> imagen
+// "Env/Shore/Cliff.png"), así que buscamos la imagen igual que
+// buscamos los modelos: directo -> nombre exacto -> similitud.
+const textureRoot = "texture/";
+const textureFile = ".png";
+const textureLoader = new THREE.TextureLoader();
+const Texturas = new Map(); // nombreMaterial -> THREE.Texture
+
+let listaTexturas = null;
+let indiceTexturasPorNombre = null;
+
+function buildTextureList(mapData) {
+    const lista = [];
+    const assetData = mapData?.AssetData;
+    if (!Array.isArray(assetData)) return lista;
+    for (const group of assetData) {
+        if (!Array.isArray(group) || group[0] !== "VuTextureAsset") continue;
+        for (const ruta of group.slice(1)) lista.push(ruta);
+    }
+    return lista;
+}
+
+function buildTextureIndex(mapData) {
+    const index = new Map();
+    for (const ruta of buildTextureList(mapData)) {
+        const nombreArchivo = ruta.split("/").pop();
+        if (!index.has(nombreArchivo)) index.set(nombreArchivo, ruta);
+    }
+    return index;
+}
+
+async function intentarCargarTextura(rutaTextura) {
+    const succes = `${textureRoot}${rutaTextura}${textureFile}`;
+    const tex = await textureLoader.loadAsync(succes);
+    tex.colorSpace = THREE.SRGBColorSpace;
+
+    // Las texturas de glTF usan origen arriba-izquierda; el
+    // TextureLoader normal de three.js voltea verticalmente por
+    // defecto (flipY=true), lo que se ve como la imagen invertida
+    // o mal alineada sobre el modelo. La desactivamos.
+    tex.flipY = false;
+
+    return tex;
+}
+
+function buscarTexturaPorSimilitud(referencia) {
+    if (!listaTexturas) listaTexturas = buildTextureList(mapData);
+
+    const objetivo = normalizarNombre(referencia);
+    if (!objetivo) return null;
+
+    const candidatos = listaTexturas.filter(ruta => {
+        const n = normalizarNombre(ruta);
+        return n && (objetivo.includes(n) || n.includes(objetivo));
+    });
+
+    if (candidatos.length === 0) return null;
+    return candidatos.sort((a, b) => a.length - b.length)[0];
+}
+
+async function chargeTexture(nombreMaterial) {
+    if (!nombreMaterial) return null;
+    if (Texturas.has(nombreMaterial)) return Texturas.get(nombreMaterial);
+
+    // Intento 1: nombre directo del material
+    try {
+        const tex = await intentarCargarTextura(nombreMaterial);
+        Texturas.set(nombreMaterial, tex);
+        return tex;
+    } catch (err) {
+        // Intento 2: mismo nombre de archivo, distinta carpeta
+        if (!indiceTexturasPorNombre) {
+            indiceTexturasPorNombre = buildTextureIndex(mapData);
+        }
+        const nombreArchivo = nombreMaterial.split("/").pop();
+        const rutaExacta = indiceTexturasPorNombre.get(nombreArchivo);
+
+        if (rutaExacta && rutaExacta !== nombreMaterial) {
+            try {
+                const tex = await intentarCargarTextura(rutaExacta);
+                console.log(`🎨 "${nombreMaterial}" resuelto (exacto) como "${rutaExacta}"`);
+                Texturas.set(nombreMaterial, tex);
+                return tex;
+            } catch (err2) { /* seguimos */ }
+        }
+
+        // Intento 3: similitud de texto
+        const rutaSimilar = buscarTexturaPorSimilitud(nombreMaterial);
+        if (rutaSimilar && rutaSimilar !== rutaExacta) {
+            try {
+                const tex = await intentarCargarTextura(rutaSimilar);
+                console.log(`🎨 "${nombreMaterial}" resuelto (similitud) como "${rutaSimilar}"`);
+                Texturas.set(nombreMaterial, tex);
+                return tex;
+            } catch (err3) { /* sin suerte */ }
+        }
+
+        console.warn(`No se encontró textura para el material "${nombreMaterial}"`);
+        Texturas.set(nombreMaterial, null); // no reintentar de nuevo
+        return null;
+    }
+}
+
+// Recorre todas las mallas del modelo recién cargado y les aplica
+// su textura según el nombre del material que ya trae el .glb.
+async function aplicarTexturas(scene) {
+    const mallas = [];
+    scene.traverse(obj => {
+        if (obj.isMesh && obj.material) mallas.push(obj);
+    });
+
+    for (const malla of mallas) {
+        const materiales = Array.isArray(malla.material) ? malla.material : [malla.material];
+
+        for (const mat of materiales) {
+            if (!mat || !mat.name) continue;
+
+            const tex = await chargeTexture(mat.name);
+            if (tex) {
+                mat.map = tex;
+                mat.needsUpdate = true;
+            }
+        }
+    }
+}
+
 async function chargeModel(VuEngine){
     // si el modelo cargo antes -> devolvemos copia
     if(Models.has(VuEngine)){
@@ -1352,6 +1547,7 @@ async function chargeModel(VuEngine){
     // Intento 1: ruta directa tal como viene de la entidad
     try{
         const scene = await intentarCargarGLB(VuEngine);
+        await aplicarTexturas(scene);
         Models.set(VuEngine, scene);
         return scene.clone(true);
     }catch (err){
@@ -1367,6 +1563,7 @@ async function chargeModel(VuEngine){
             try {
                 const scene = await intentarCargarGLB(rutaExacta);
                 console.log(`↻ "${VuEngine}" resuelto (exacto) como "${rutaExacta}"`);
+                await aplicarTexturas(scene);
                 Models.set(VuEngine, scene);
                 return scene.clone(true);
             } catch (err2) { /* seguimos al intento 3 */ }
@@ -1378,6 +1575,7 @@ async function chargeModel(VuEngine){
             try {
                 const scene = await intentarCargarGLB(rutaSimilar);
                 console.log(`↻ "${VuEngine}" resuelto (similitud) como "${rutaSimilar}"`);
+                await aplicarTexturas(scene);
                 Models.set(VuEngine, scene);
                 return scene.clone(true);
             } catch (err3) {
@@ -1407,6 +1605,47 @@ gltfLoader.load('model/Boat.glb', function(glb){
 // crear modelos,codigo geberado con IA
 // 
 // ============================================================
+
+// ============================================================
+// ZONAS "OUT OF BOUNDS" (cajas invisibles en el juego)
+// ============================================================
+// VuOutOfBoundsBoxEntity trae un VuTransformComponent normal
+// (Position/Rotation/Scale), igual que los demás -- no hay Min/Max
+// aparte. Dibujamos un cubo unitario (1x1x1) en wireframe y dejamos
+// que la Scale de la entidad le dé el tamaño real de la caja.
+function crearCajaOutOfBounds(entidad) {
+
+    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    const wireframe = new THREE.WireframeGeometry(geometry);
+
+    const caja = new THREE.LineSegments(
+        wireframe,
+        new THREE.LineBasicMaterial({ color: 0xff3333 })
+    );
+
+    const transform = getTransformComponent(entidad);
+    const properties = transform?.Properties || transform?.properties || {};
+
+    const pos = readVector(properties.Position);
+    const rot = readVector(properties.Rotation);
+    const scale = readVector(properties.Scale, new THREE.Vector3(1, 1, 1));
+
+    caja.position.copy(pos);
+
+    caja.rotation.set(
+        THREE.MathUtils.degToRad(rot.x),
+        THREE.MathUtils.degToRad(rot.y),
+        THREE.MathUtils.degToRad(rot.z)
+    );
+
+    caja.scale.copy(scale);
+
+    caja.userData.type = entidad.type;
+    caja.userData.name = entidad.name;
+    caja.userData.source = entidad;
+
+    return caja;
+}
 
 // ============================================================
 // RESOLVER NOMBRE DEL MODELO A PARTIR DE LA ENTIDAD
@@ -1459,7 +1698,7 @@ async function crearObjetoDesdeEntidad(entidad, modelName) {
 
     // Cargamos el modelo automáticamente
     const modelo = await chargeModel(modelName);
-    if (!modelo) return false;
+    if (!modelo) return null;
 
     // Usamos el MISMO helper que ya usan los waypoints para leer
     // el transform (Position/Rotation/Scale reales de la entidad).
@@ -1494,7 +1733,7 @@ async function crearObjetoDesdeEntidad(entidad, modelName) {
     world.add(modelo);
     objects.push(modelo);
 
-    return true;
+    return modelo;
 }
 
 // ============================================================
@@ -1993,9 +2232,24 @@ function deleteSelected() {
         return;
 
 
-    scene.remove(
+    // Antes borraba de "scene", pero los objetos viven dentro de
+    // "world" -- por eso a veces el objeto "borrado" seguía
+    // viéndose en pantalla.
+    world.remove(
         selected
     );
+
+
+    // También lo quitamos del propio mapData, para que no se
+    // vuelva a exportar al darle Guardar.
+    const entidad = selected.userData.source;
+    if (entidad) {
+        const contenedor = entidadAContenedor.get(entidad);
+        if (contenedor) {
+            const i = contenedor.indexOf(entidad);
+            if (i !== -1) contenedor.splice(i, 1);
+        }
+    }
 
 
     const index =
@@ -2027,6 +2281,99 @@ function deleteSelected() {
     updateObjectList();
 
 }
+
+// ============================================================
+// COPIAR / PEGAR
+// ============================================================
+// Copia la entidad ORIGINAL del mapa (no una copia visual suelta),
+// y al pegar la inserta en el mismo array del árbol que el
+// original -- por eso sí se guarda bien con el botón Guardar.
+
+function copiarSeleccionado() {
+
+    const entidad = selected?.userData?.source;
+
+    if (!entidad) {
+        console.warn("No hay nada seleccionado (o es un objeto sin datos de mapa) para copiar.");
+        return;
+    }
+
+    clipboard = clonarEntidad(entidad);
+    console.log(`📋 Copiado: ${clipboard.name || clipboard.type}`);
+}
+
+async function pegarClipboard() {
+
+    if (!clipboard) {
+        console.warn("No hay nada copiado todavía.");
+        return;
+    }
+
+    const nuevaEntidad = clonarEntidad(clipboard);
+    pegadoCounter++;
+
+    const nombreOriginal = nuevaEntidad.name || "Objeto";
+    nuevaEntidad.name = `${nombreOriginal}_copia${pegadoCounter}`;
+
+    // Evitamos romper la cadena de IA de waypoints: la copia queda
+    // "suelta" (sin conexiones a otros waypoints) hasta que la
+    // conectes a mano si hace falta.
+    const scriptComp = nuevaEntidad?.data?.Components?.VuScriptComponent;
+    if (scriptComp) {
+        delete scriptComp.RefConnections;
+        delete scriptComp.Refs;
+    }
+
+    // Desplazamos un poco la posición para que no quede exactamente
+    // encima del original.
+    const transform = getTransformComponent(nuevaEntidad);
+    const properties = transform?.Properties || transform?.properties;
+    if (properties?.Position) {
+        properties.Position.X = (properties.Position.X || 0) + 3;
+        properties.Position.Y = (properties.Position.Y || 0) + 3;
+    }
+
+    // La insertamos en el mismo contenedor (ChildEntities) que el
+    // objeto del que se copió, para que exporte bien en Guardar.
+    const original = selected?.userData?.source;
+    const contenedorOriginal =
+        entidadAContenedor.get(clipboard) ||
+        (original && entidadAContenedor.get(original)) ||
+        mapData?.RootEntity?.data?.ChildEntities;
+
+    if (!contenedorOriginal) {
+        console.warn("No se encontró dónde insertar la copia dentro del mapa.");
+        return;
+    }
+
+    contenedorOriginal.push(nuevaEntidad);
+    entidadAContenedor.set(nuevaEntidad, contenedorOriginal);
+
+    // Creamos el objeto visual correspondiente
+    let objetoVisual = null;
+
+    if (nuevaEntidad.type === "VuAiWaypointEntity") {
+        waypointCounter++;
+        objetoVisual = createWaypointFromEntity(nuevaEntidad);
+    } else {
+        const modelName = getModelName(nuevaEntidad);
+        if (modelName) {
+            objetoVisual = await crearObjetoDesdeEntidad(nuevaEntidad, modelName);
+        }
+    }
+
+    if (!objetoVisual) {
+        console.warn("No se pudo crear la copia en la escena (¿tipo no soportado para pegar?).");
+        return;
+    }
+
+    updateObjectList();
+    selectObject(objetoVisual);
+    focusSelected();
+
+    console.log(`📥 Pegado: ${nuevaEntidad.name}`);
+}
+
 
 
 // ============================================================
@@ -2264,6 +2611,28 @@ function saveMap() {
 // ============================================================
 
 function onKeyDown(event) {
+
+    if (
+        (event.ctrlKey || event.metaKey) &&
+        (event.key === "c" || event.key === "C")
+    ) {
+
+        copiarSeleccionado();
+        return;
+
+    }
+
+
+    if (
+        (event.ctrlKey || event.metaKey) &&
+        (event.key === "v" || event.key === "V")
+    ) {
+
+        pegarClipboard();
+        return;
+
+    }
+
 
     if (
         !selected
